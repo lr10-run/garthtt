@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Time trial timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script>
+/* Paste your Firebase web app config between the braces (see the setup steps). */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyADxSsPPZMud4l1DsQEiZIDDU06jnZPV58",
+  authDomain: "garth-tt.firebaseapp.com",
+  databaseURL: "https://garth-tt-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "garth-tt",
+  storageBucket: "garth-tt.firebasestorage.app",
+  messagingSenderId: "706621784077",
+  appId: "1:706621784077:web:f8ed4e8790d3185a7c1544"
+};
+</script>
+<style>
+:root{
+  --paper:#f4f6f1; --panel:#ffffff; --ink:#101b24; --muted:#52606b; --line:#c5ccc6;
+  --go:#08704a; --go-ink:#ffffff; --stop:#c20f2c; --stop-ink:#ffffff;
+  --vis:#f5e400; --vis-ink:#101b24; --warn-bg:#fff3c4; --warn-ink:#5a4300;
+  --check-a:#ffffff; --check-b:#101b24;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#10181e; --panel:#1b252d; --ink:#f1f4ef; --muted:#a4b0b8; --line:#3a4750;
+    --go:#14935f; --stop:#dc2340; --warn-bg:#42370c; --warn-ink:#ffe98f;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10181e; --panel:#1b252d; --ink:#f1f4ef; --muted:#a4b0b8; --line:#3a4750;
+  --go:#14935f; --stop:#dc2340; --warn-bg:#42370c; --warn-ink:#ffe98f;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.45 Barlow,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--ink)}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+:focus-visible{outline:3px solid var(--vis);outline-offset:2px;box-shadow:0 0 0 5px var(--ink)}
+.wrap{max-width:860px;margin:0 auto;padding:0 14px 40px}
+
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ink);display:grid;grid-template-columns:repeat(4,1fr)}
+nav button{border:0;background:none;color:#fff;padding:13px 2px 11px;font:600 21px/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;border-bottom:5px solid transparent;opacity:.78}
+nav button[aria-current="page"]{opacity:1;border-bottom-color:var(--vis)}
+
+.status{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 0;font-size:15px;color:var(--muted);min-height:92px;align-content:flex-start}
+.status strong{color:var(--ink);font-weight:600}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:var(--line)}
+.dot.ok{background:var(--go)} .dot.bad{background:var(--stop)}
+.linkbtn{background:none;border:1px solid var(--line);border-radius:6px;padding:6px 11px;min-height:36px;font-size:15px;font-weight:500}
+.notice{background:var(--warn-bg);color:var(--warn-ink);border-radius:6px;padding:10px 12px;margin:0 0 12px;font-size:15px}
+.notice[hidden]{display:none}
+
+h2{font:700 25px/1.1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;margin:22px 0 9px}
+h2:first-child{margin-top:6px}
+.empty{color:var(--muted);margin:6px 0 14px}
+.name{font:700 clamp(23px,6vw,31px)/1.05 "Barlow Condensed","Arial Narrow",Arial,sans-serif;overflow-wrap:anywhere}
+.timer{font:700 clamp(40px,12vw,60px)/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+
+/* Start */
+.next{display:block;width:100%;min-height:128px;border:0;border-radius:10px;background:var(--go);color:var(--go-ink);padding:14px 16px;text-align:left}
+.next .verb{font:600 22px/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;display:block;margin-bottom:6px}
+.next .who{font:700 clamp(38px,11vw,58px)/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;overflow-wrap:anywhere}
+.next:active,.stop:active{filter:brightness(.82)}
+.queue{list-style:none;margin:10px 0 0;padding:0}
+.queue li{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.queue .name{flex:1;font-size:23px;font-weight:600}
+.small-go{border:2px solid var(--go);color:var(--ink);background:none;border-radius:7px;min-height:44px;padding:0 16px;font-weight:600}
+.course{list-style:none;margin:0;padding:0}
+.course li{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.course .timer{font-size:32px}
+.full{background:var(--vis);color:var(--vis-ink);padding:9px 12px;border-radius:6px;margin:0 0 10px;font-weight:600}
+
+/* Finish */
+.slots{display:grid;gap:9px;grid-template-columns:1fr}
+@media (min-width:640px){.slots{grid-template-columns:1fr 1fr}}
+.slot{min-height:clamp(112px,19vh,170px);border-radius:10px;display:flex}
+.slot.free{border:2px dashed var(--line);align-items:center;justify-content:center;color:var(--muted)}
+.stop{position:relative;width:100%;border:0;border-radius:10px;background:var(--stop);color:var(--stop-ink);padding:10px 16px 10px 44px;text-align:left;display:grid;grid-template-columns:1fr auto;gap:0 12px;align-items:center;overflow:hidden}
+.stop::before{content:"";position:absolute;left:0;top:0;bottom:0;width:30px;background:repeating-conic-gradient(var(--check-b) 0 25%,var(--check-a) 0 50%) 0 0/20px 20px}
+.stop .name{font-size:clamp(32px,10vw,46px)}
+.done{width:100%;background:var(--panel);border:2px solid var(--go);border-radius:10px;padding:10px 14px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 12px}
+.done .sub{color:var(--muted);font-size:15px}
+.done .timer{grid-column:1;font-size:40px}
+.done .linkbtn{grid-row:1/3;grid-column:2}
+details{margin-top:18px;border-top:1px solid var(--line);padding-top:9px}
+summary{cursor:pointer;font-weight:500;min-height:36px}
+
+/* Results */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:15px;font-weight:500;color:var(--muted);padding:5px 6px}
+td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:middle}
+td.pos{width:36px;font:700 24px/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif}
+td.t,th.t{text-align:right;font:700 26px/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap}
+th.t{font:500 15px/1 Barlow,Arial,sans-serif}
+td.a{width:1%;white-space:nowrap;text-align:right}
+td .timer{font-size:26px}
+.row-name{font-weight:600;overflow-wrap:anywhere}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.primary{background:var(--ink);color:var(--paper);border:0;border-radius:7px;min-height:46px;padding:0 18px;font-weight:600}
+.armed{background:var(--stop)!important;color:#fff!important;border-color:var(--stop)!important}
+
+/* Runners */
+label{display:block;font-weight:500;margin-bottom:5px}
+textarea{width:100%;min-height:130px;border:1px solid var(--muted);border-radius:7px;background:var(--panel);padding:10px;font-size:17px}
+.help{font-size:15px;color:var(--muted);margin:5px 0 10px}
+.gate{max-width:480px;margin:18px auto}
+.gate h1{font:700 40px/1 "Barlow Condensed","Arial Narrow",Arial,sans-serif;margin:0 0 12px}
+.gate input{width:100%;min-height:46px;border:1px solid var(--muted);border-radius:7px;background:var(--panel);padding:8px 10px;margin-bottom:10px}
+.gate .primary{width:100%}
+.gate h2{margin-top:28px}
+.share{overflow-wrap:anywhere;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:15px;margin:0 0 8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:7px;max-width:92vw;z-index:20;font-size:15px}
+.toast[hidden]{display:none}
+@media (prefers-reduced-motion:no-preference){.done{animation:land .25s ease-out}@keyframes land{from{transform:scale(.98)}to{transform:none}}}
+</style>
+</head>
+<body>
+<div class="wrap" id="gate" hidden></div>
+<div id="app" hidden>
+<nav aria-label="Timer sections">
+  <button data-tab="start">Start</button>
+  <button data-tab="finish">Finish</button>
+  <button data-tab="results">Results</button>
+  <button data-tab="runners">Runners</button>
+</nav>
+<div class="wrap">
+  <div class="status" id="status" aria-live="polite"></div>
+  <main id="view"></main>
+  <p class="notice" id="notice" hidden style="margin-top:14px"></p>
+  <section id="runnersForm" hidden>
+    <h2>Add runners</h2>
+    <label for="newRunners">Numbers or names, one per line</label>
+    <textarea id="newRunners" autocomplete="off" placeholder="101&#10;102&#10;Sam Jones"></textarea>
+    <p class="help">Runners start in this order. You can still start anyone out of turn.</p>
+    <button class="primary" data-act="add">Add runners</button>
+  </section>
+  <section id="runnersList"></section>
+  <section id="shareBox" hidden></section>
+</div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function(){
+"use strict";
+var LS = {
+  get:function(k,d){try{var v=localStorage.getItem("tt."+k);return v===null?d:JSON.parse(v)}catch(e){return d}},
+  set:function(k,v){try{localStorage.setItem("tt."+k,JSON.stringify(v))}catch(e){}}
+};
+var $=function(id){return document.getElementById(id)};
+var esc=function(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
+
+var fb=null, eventRef=null, code=null;
+var docs={};                 // runners as last received
+var pending={};              // times not yet confirmed saved
+var tab=LS.get("tab",null);
+var role=LS.get("role",null); // "start" or "finish": which end this phone is on
+var clock=LS.get("clock",null); // {offset,rtt,at}: offset from this phone to Firebase's clock
+var device=LS.get("device",null);
+if(!device){device=randomCode(12);LS.set("device",device)}
+var state={loaded:false,connected:false,everConnected:false,unreachable:false,dbMissing:false,cantWrite:false,syncing:false,syncFailed:false,armed:null};
+var slots=[null,null,null,null];
+var lastTap=0, armTimer=null, toastTimer=null;
+
+function randomCode(n){
+  var abc="abcdefghjkmnpqrstuvwxyz23456789",a=new Uint32Array(n),o="";
+  crypto.getRandomValues(a);
+  for(var i=0;i<n;i++)o+=abc[a[i]%abc.length];
+  return o;
+}
+function now(){return Date.now()+(clock?clock.offset:0)}
+
+function fmt(ms){
+  if(ms<0)ms=0;
+  var t=Math.floor(ms/100),s=Math.floor(t/10),m=Math.floor(s/60),h=Math.floor(m/60);
+  var ss=String(s%60).padStart(2,"0");
+  if(h)return h+":"+String(m%60).padStart(2,"0")+":"+ss+"."+(t%10);
+  return m+":"+ss+"."+(t%10);
+}
+function runners(){
+  var ids=Object.keys(docs),out=[];
+  ids.forEach(function(id){out.push(Object.assign({id:id},docs[id],pending[id]||{}))});
+  return out.sort(function(a,b){return (a.order||0)-(b.order||0)});
+}
+function isOn(r){return r.startAt&&!r.finishAt&&!r.dnf}
+function isQueued(r){return !r.startAt&&!r.finishAt&&!r.dnf}
+function lingering(r){return r.finishAt&&Math.abs(now()-r.finishAt)<10000}
+
+/* ---------- saving times: kept on this phone until the store confirms ---------- */
+function patch(id,p){
+  pending[id]=Object.assign(pending[id]||{},p);
+  savePending();
+  render();flush();
+}
+var flushing=false,flushTimer=null;
+function savePending(){LS.set("pending:"+code,pending)}
+function withTimeout(pr,ms){
+  return new Promise(function(res,rej){
+    var t=setTimeout(function(){rej({code:"unavailable"})},ms);
+    pr.then(function(v){clearTimeout(t);res(v)},function(e){clearTimeout(t);rej(e)});
+  });
+}
+function flush(){
+  if(flushing||!eventRef)return;
+  var ids=Object.keys(pending);
+  if(!ids.length)return;
+  flushing=true;
+  var id=ids[0],sent=Object.assign({},pending[id]);
+  withTimeout(eventRef.child("runners/"+id).update(sent),15000).then(function(){
+    var cur=pending[id]||{};
+    Object.keys(sent).forEach(function(k){
+      if(cur[k]===sent[k]){delete cur[k]}
+      if(docs[id])docs[id]=Object.assign({},docs[id],(function(){var o={};o[k]=sent[k];return o})());
+    });
+    if(!Object.keys(cur).length)delete pending[id];
+    savePending();
+    state.cantWrite=false;flushing=false;render();flush();
+  },function(e){
+    flushing=false;
+    if(state.loaded&&!docs[id]){delete pending[id];savePending();render();flush();return}
+    if(e&&/permission/i.test(String(e.code||e.message))){state.cantWrite=true}
+    clearTimeout(flushTimer);flushTimer=setTimeout(flush,state.cantWrite?15000:3000);
+    render();
+  });
+}
+
+/* ---------- clock sync: each phone measures its offset from Firebase's clock ---------- */
+function wait(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function sampleOnce(){
+  var ref=eventRef.child("clocks/"+device),t0=Date.now(),t2;
+  return withTimeout(ref.set(fb.database.ServerValue.TIMESTAMP).then(function(){
+    t2=Date.now();
+    return ref.get();
+  }).then(function(snap){
+    var ts=snap.val();
+    return typeof ts==="number"?{rtt:t2-t0,offset:ts-(t0+t2)/2}:null;
+  }),5000).catch(function(){return null});
+}
+function syncClock(manual){
+  if(!eventRef||state.syncing||!state.connected){
+    if(manual)toast("This phone is offline. Sync when it has signal.");
+    return Promise.resolve();
+  }
+  state.syncing=true;if(manual)render();
+  var best=null,n=0;
+  function step(){
+    return sampleOnce().then(function(x){
+      if(x&&(!best||x.rtt<best.rtt))best=x;
+      n++;
+      if(!best&&n>=2)return;
+      if(n<6)return wait(200).then(step);
+    });
+  }
+  return step().then(function(){
+    state.syncing=false;
+    if(best){
+      var old=clock,stale=!old||Date.now()-old.at>600000;
+      if(manual||stale||best.rtt<=old.rtt*1.5){
+        clock={offset:best.offset,rtt:best.rtt,at:Date.now()};LS.set("clock",clock);
+      }
+      state.syncFailed=false;
+    }else{state.syncFailed=true}
+    render();
+    if(manual)toast(best?"Clock synced":"The sync didn’t complete. Check the signal and try again.");
+  });
+}
+
+/* ---------- rendering ---------- */
+function setHtml(el,html){if(el._html!==html){el._html=html;el.innerHTML=html;tick()}}
+function btnLabel(key,label){return state.armed===key?"Tap again to confirm":label}
+function armClass(key){return state.armed===key?" armed":""}
+
+function renderStatus(){
+  var unsent=Object.keys(pending).length,h="";
+  if(unsent)h+='<span><span class="dot bad"></span><strong>'+unsent+(unsent===1?" runner’s time":" runners’ times")+" waiting to send</strong></span>";
+  else if(state.connected)h+='<span><span class="dot ok"></span>All times saved</span>';
+  else h+='<span><span class="dot bad"></span>Offline</span>';
+  if(tab==="start"||tab==="finish"){
+    if(state.syncing&&!clock)h+="<span>Syncing clock</span>";
+    else if(clock)h+='<span>Clock synced to within '+Math.max(10,Math.round(clock.rtt/2))+' ms</span>';
+    else h+="<span><strong>Clock not synced</strong></span>";
+    h+='<button class="linkbtn" data-act="sync">Sync clock</button>';
+  }
+  setHtml($("status"),h);
+  var n=$("notice"),msg="";
+  if(state.cantWrite)msg="The database refused this save. Check the database rules from the setup steps. Times stay on this phone until it’s fixed.";
+  else if(state.unreachable)msg="No connection right now. Keep timing: times are held on this phone and send when signal returns. Don’t close this page.";
+  else if((tab==="start"||tab==="finish")&&!clock)msg="This phone’s clock isn’t synced yet. Unsynced phones can be seconds apart, which would make every result wrong by that amount. Get signal and tap Sync clock before timing.";
+  n.hidden=!msg;n.textContent=msg;
+}
+
+function eventLink(){return location.href.split("#")[0]+"#"+code}
+function renderStart(){
+  var all=runners(),q=all.filter(isQueued),on=all.filter(isOn).sort(function(a,b){return b.startAt-a.startAt}),h="";
+  if(!all.length){return '<h2>No runners yet</h2><p class="empty">Add the start list to begin.</p><button class="primary" data-goto="runners">Add runners</button>'}
+  if(on.length>=4)h+='<p class="full">'+on.length+' runners on course. Hold the next one if the limit is 4.</p>';
+  if(q.length){
+    h+='<button class="next" data-tap="start" data-id="'+esc(q[0].id)+'"><span class="verb">Start</span><span class="who">'+esc(q[0].name)+'</span></button>';
+    if(q.length>1){
+      h+='<ul class="queue">';
+      q.slice(1).forEach(function(r){h+='<li><span class="name">'+esc(r.name)+'</span><button class="small-go" data-tap="start" data-id="'+esc(r.id)+'">Start</button></li>'});
+      h+="</ul>";
+    }
+  }else{h+='<p class="empty">Everyone has started.</p>'}
+  h+="<h2>On course ("+on.length+")</h2>";
+  if(!on.length)h+='<p class="empty">Nobody on course.</p>';
+  else{
+    h+='<ul class="course">';
+    on.forEach(function(r){
+      var k="undoStart:"+r.id;
+      h+='<li><span class="name">'+esc(r.name)+'</span><span class="timer" data-from="'+r.startAt+'"></span><button class="linkbtn'+armClass(k)+'" data-act="undoStart" data-id="'+esc(r.id)+'">'+btnLabel(k,"Undo start")+"</button></li>";
+    });
+    h+="</ul>";
+  }
+  return h;
+}
+
+function renderFinish(){
+  var all=runners(),byId={};
+  all.forEach(function(r){byId[r.id]=r});
+  var active=all.filter(function(r){return isOn(r)||lingering(r)}).sort(function(a,b){return (a.startAt||a.finishAt)-(b.startAt||b.finishAt)});
+  var keep={};active.forEach(function(r){keep[r.id]=1});
+  slots=slots.map(function(id){return keep[id]?id:null});
+  active.forEach(function(r){
+    if(slots.indexOf(r.id)>=0)return;
+    var i=slots.indexOf(null);
+    if(i<0){slots.push(r.id)}else{slots[i]=r.id}
+  });
+  while(slots.length>4&&slots[slots.length-1]===null)slots.pop();
+  var h='<div class="slots">';
+  slots.forEach(function(id){
+    var r=id&&byId[id];
+    if(!r){h+='<div class="slot free">Free</div>';return}
+    if(r.finishAt){
+      var res=r.startAt?fmt(r.finishAt-r.startAt):"Start time on its way";
+      h+='<div class="slot"><div class="done"><span class="name">'+esc(r.name)+'</span><span class="'+(r.startAt?"timer":"sub")+'">'+res+'</span><button class="linkbtn" data-act="undoFinish" data-id="'+esc(r.id)+'">Undo</button></div></div>';
+    }else{
+      h+='<div class="slot"><button class="stop" data-tap="finish" data-id="'+esc(r.id)+'"><span class="name">'+esc(r.name)+'</span><span class="timer" data-from="'+r.startAt+'"></span></button></div>';
+    }
+  });
+  h+="</div>";
+  var waiting=all.filter(isQueued);
+  if(waiting.length){
+    h+='<details'+(detailsOpen?" open":"")+' id="missing"><summary>Runner here but not shown?</summary><p class="help">Their start hasn’t reached this phone yet. Record the finish now and the result completes when the start time arrives.</p><ul class="queue">';
+    waiting.forEach(function(r){h+='<li><span class="name">'+esc(r.name)+'</span><button class="small-go" data-tap="finish" data-id="'+esc(r.id)+'">Stop</button></li>'});
+    h+="</ul></details>";
+  }
+  return h;
+}
+
+function ranked(){
+  return runners().filter(function(r){return r.startAt&&r.finishAt&&!r.dnf&&r.finishAt>=r.startAt}).sort(function(a,b){return (a.finishAt-a.startAt)-(b.finishAt-b.startAt)});
+}
+function resetBtn(r){
+  var k="reset:"+r.id;
+  return '<button class="linkbtn'+armClass(k)+'" data-act="reset" data-id="'+esc(r.id)+'">'+btnLabel(k,"Reset")+"</button>";
+}
+function renderResults(){
+  var all=runners(),done=ranked(),on=all.filter(isOn),dnf=all.filter(function(r){return r.dnf}),h="";
+  var odd=all.filter(function(r){return !r.dnf&&r.finishAt&&(!r.startAt||r.finishAt<r.startAt)});
+  h+="<h2>Results</h2>";
+  if(!done.length)h+='<p class="empty">Finished runners appear here, fastest first.</p>';
+  else{
+    h+='<table><thead><tr><th>Pos</th><th>Runner</th><th class="t">Time</th><th></th></tr></thead><tbody>';
+    done.forEach(function(r,i){h+='<tr><td class="pos">'+(i+1)+'</td><td class="row-name">'+esc(r.name)+'</td><td class="t">'+fmt(r.finishAt-r.startAt)+'</td><td class="a">'+resetBtn(r)+"</td></tr>"});
+    h+="</tbody></table>";
+  }
+  if(odd.length){
+    h+="<h2>Needs checking</h2><table><tbody>";
+    odd.forEach(function(r){h+='<tr><td class="row-name">'+esc(r.name)+'</td><td>'+(r.startAt?"Finish is before start":"Waiting for start time")+'</td><td class="a">'+resetBtn(r)+"</td></tr>"});
+    h+="</tbody></table>";
+  }
+  if(on.length){
+    h+="<h2>On course</h2><table><tbody>";
+    on.forEach(function(r){h+='<tr><td class="row-name">'+esc(r.name)+'</td><td class="t"><span class="timer" data-from="'+r.startAt+'"></span></td><td class="a"><button class="linkbtn" data-act="dnf" data-id="'+esc(r.id)+'">DNF</button> '+resetBtn(r)+"</td></tr>"});
+    h+="</tbody></table>";
+  }
+  if(dnf.length){
+    h+="<h2>Did not finish</h2><table><tbody>";
+    dnf.forEach(function(r){h+='<tr><td class="row-name">'+esc(r.name)+'</td><td class="a">'+resetBtn(r)+"</td></tr>"});
+    h+="</tbody></table>";
+  }
+  if(done.length)h+='<div class="btnrow"><button class="primary" data-act="csv">Download results (CSV)</button></div>';
+  return h;
+}
+function renderRunners(){
+  var all=runners(),h="<h2>Start list ("+all.length+")</h2>";
+  if(!all.length)return h+'<p class="empty">No runners added yet.</p>';
+  h+='<ul class="queue">';
+  all.forEach(function(r){
+    var k="del:"+r.id;
+    h+='<li><span class="name">'+esc(r.name)+'</span><button class="linkbtn'+armClass(k)+'" data-act="del" data-id="'+esc(r.id)+'">'+btnLabel(k,"Remove")+"</button></li>";
+  });
+  h+='</ul><div class="btnrow"><button class="linkbtn'+armClass("resetAll")+'" data-act="resetAll">'+btnLabel("resetAll","Clear all times")+'</button><button class="linkbtn'+armClass("delAll")+'" data-act="delAll">'+btnLabel("delAll","Remove everyone")+"</button></div>";
+  return h;
+}
+var detailsOpen=false;
+function render(){
+  var d=$("missing");if(d)detailsOpen=d.open;
+  document.querySelectorAll("nav button").forEach(function(b){
+    if(b.dataset.tab===tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current");
+  });
+  renderStatus();
+  var v=$("view"),isR=tab==="runners";
+  $("runnersForm").hidden=!isR;$("runnersList").hidden=!isR;$("shareBox").hidden=!isR;
+  if(isR)setHtml($("shareBox"),'<h2>Second phone</h2><p class="help">Anyone with this link can view and change this event, so share it only with your timekeepers.</p><p class="share">'+esc(eventLink())+'</p><div class="btnrow"><button class="primary" data-act="copy">Copy link</button><button class="linkbtn" data-act="leave">Switch event</button></div>');
+  if(isR){setHtml(v,"");setHtml($("runnersList"),renderRunners())}
+  else setHtml(v,tab==="start"?renderStart():tab==="finish"?renderFinish():renderResults());
+}
+var lingerSeen="";
+function tick(){
+  var n=now();
+  document.querySelectorAll("[data-from]").forEach(function(el){
+    var t=fmt(n-Number(el.dataset.from));
+    if(el.textContent!==t)el.textContent=t;
+  });
+}
+setInterval(function(){
+  tick();
+  if(tab==="finish"){
+    var key=runners().filter(lingering).map(function(r){return r.id}).join();
+    if(key!==lingerSeen){lingerSeen=key;render()}
+  }
+},100);
+setInterval(renderStatus,5000);
+
+function toast(msg){
+  var t=$("toast");t.textContent=msg;t.hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.hidden=true},3500);
+}
+function buzz(){try{if(navigator.vibrate)navigator.vibrate(40)}catch(e){}}
+
+/* ---------- actions ---------- */
+function setTab(t){
+  tab=t;LS.set("tab",t);
+  if((t==="start"||t==="finish")&&!clock)syncClock(false);
+  render();window.scrollTo(0,0);
+}
+function timingTap(el){
+  var when=now(),t=Date.now();
+  if(t-lastTap<700)return;
+  lastTap=t;
+  var id=el.dataset.id;
+  if(el.dataset.tap==="start")patch(id,{startAt:when});
+  else patch(id,{finishAt:when});
+  buzz();
+}
+document.addEventListener("pointerdown",function(e){
+  if(e.button)return;
+  var el=e.target.closest&&e.target.closest("[data-tap]");
+  if(el){timingTap(el);el._tapped=Date.now()}
+});
+function arm(key,fn){
+  if(state.armed===key){state.armed=null;clearTimeout(armTimer);fn();render();return}
+  state.armed=key;clearTimeout(armTimer);
+  armTimer=setTimeout(function(){state.armed=null;render()},3500);
+  render();
+}
+function storeErr(e){
+  if(e&&/permission/i.test(String(e.code||e.message))){state.cantWrite=true;render()}
+  else toast("That didn’t save. Check the connection and try again.");
+}
+function addRunners(){
+  var box=$("newRunners"),names=box.value.split(/\r?\n/).map(function(s){return s.trim()}).filter(Boolean);
+  if(!names.length){toast("Enter at least one number or name.");box.focus();return}
+  var base=Date.now(),col=eventRef.child("runners"),batch={};
+  names.forEach(function(n,i){batch[col.push().key]={name:n.slice(0,80),order:base+i,dnf:false}});
+  col.update(batch).catch(storeErr);
+  box.value="";toast(names.length===1?"Runner added":names.length+" runners added");
+}
+function csvCell(s){s=String(s);return /^[=+\-@\t\r]/.test(s)?"\"'"+s.replace(/"/g,'""')+'"':'"'+s.replace(/"/g,'""')+'"'}
+function downloadCsv(){
+  var rows=[["Position","Runner","Time","Milliseconds"]];
+  ranked().forEach(function(r,i){rows.push([i+1,r.name,fmt(r.finishAt-r.startAt),r.finishAt-r.startAt])});
+  runners().filter(function(r){return r.dnf}).forEach(function(r){rows.push(["DNF",r.name,"",""])});
+  var csv=rows.map(function(c){return c.map(csvCell).join(",")}).join("\r\n");
+  var a=document.createElement("a"),u=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.href=u;a.download="time-trial-results.csv";document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u)},5000);
+}
+document.addEventListener("click",function(e){
+  var el=e.target.closest&&e.target.closest("button");
+  if(!el)return;
+  if(el.dataset.tab){setTab(el.dataset.tab);return}
+  if(el.dataset.goto){setTab(el.dataset.goto);return}
+  if(el.dataset.tap){
+    if(e.detail===0)timingTap(el); // keyboard only; touch and mouse act on press
+    return;
+  }
+  var act=el.dataset.act,id=el.dataset.id;
+  if(act==="sync")syncClock(true);
+  else if(act==="add")addRunners();
+  else if(act==="undoStart")arm("undoStart:"+id,function(){patch(id,{startAt:null})});
+  else if(act==="undoFinish")patch(id,{finishAt:null});
+  else if(act==="dnf")patch(id,{dnf:true});
+  else if(act==="reset")arm("reset:"+id,function(){patch(id,{startAt:null,finishAt:null,dnf:false})});
+  else if(act==="del")arm("del:"+id,function(){
+    delete pending[id];savePending();
+    eventRef.child("runners/"+id).remove().catch(storeErr);
+  });
+  else if(act==="resetAll")arm("resetAll",function(){
+    pending={};savePending();
+    var u={};runners().forEach(function(r){u[r.id+"/startAt"]=null;u[r.id+"/finishAt"]=null;u[r.id+"/dnf"]=false});
+    eventRef.child("runners").update(u).then(function(){toast("All times cleared")},storeErr);
+  });
+  else if(act==="delAll")arm("delAll",function(){
+    pending={};savePending();
+    eventRef.child("runners").remove().then(function(){toast("Everyone removed")},storeErr);
+  });
+  else if(act==="csv")downloadCsv();
+  else if(act==="copy"){
+    var done=function(){toast("Link copied")},no=function(){toast("Copy the link above by hand.")};
+    if(navigator.clipboard)navigator.clipboard.writeText(eventLink()).then(done,no);else no();
+  }
+  else if(act==="leave"){LS.set("event",null);location.href=location.href.split("#")[0]}
+  else if(act==="create")openEvent(randomCode(20),true);
+  else if(act==="join"){
+    var m=($("joinCode").value||"").trim().split("#").pop().toLowerCase();
+    if(/^[a-z0-9]{16,}$/.test(m))openEvent(m,false);else toast("That isn’t a valid event link or code.");
+  }
+});
+
+/* ---------- connect ---------- */
+var wake=null;
+function keepAwake(){
+  try{
+    if(navigator.wakeLock&&document.visibilityState==="visible"&&!wake){
+      navigator.wakeLock.request("screen").then(function(l){wake=l;l.addEventListener("release",function(){wake=null})}).catch(function(){});
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",keepAwake);
+document.addEventListener("pointerdown",keepAwake);
+
+function showGate(){
+  $("app").hidden=true;$("gate").hidden=false;
+  var h='<div class="gate"><h1>Time trial timer</h1>';
+  if(!fb){
+    h+='<p class="notice">'+(window.firebase?"This page hasn’t been connected to your Firebase project yet. Add your config to FIREBASE_CONFIG in index.html, as in the setup steps.":"The database software didn’t load. Check this phone’s connection and reload.")+'</p></div>';
+  }else{
+    h+='<button class="primary" data-act="create">Create new event</button><h2>Join an event</h2><label for="joinCode">Event link or code</label><input id="joinCode" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="primary" data-act="join">Join event</button></div>';
+  }
+  $("gate").innerHTML=h;
+}
+function openEvent(c,isNew){
+  code=c;LS.set("event",c);
+  if(location.hash.slice(1)!==c)history.replaceState(null,"","#"+c);
+  pending=LS.get("pending:"+c,{});
+  docs=LS.get("docs:"+c,{});
+  $("gate").hidden=true;$("app").hidden=false;
+  if(isNew)tab="runners";
+  eventRef=fb.database().ref("events/"+c);
+  render();
+  var offlineTimer=null;
+  fb.database().ref(".info/connected").on("value",function(s){
+    state.connected=!!s.val();
+    if(state.connected){
+      state.everConnected=true;state.unreachable=false;clearTimeout(offlineTimer);
+      syncClock(false);flush();
+    }else{
+      clearTimeout(offlineTimer);
+      offlineTimer=setTimeout(function(){state.unreachable=true;render()},state.everConnected?3000:10000);
+    }
+    render();
+  });
+  eventRef.child("runners").on("value",function(s){
+    docs=s.val()||{};state.loaded=true;
+    LS.set("docs:"+c,docs);
+    render();flush();
+  },function(){state.cantWrite=true;render()});
+  setInterval(function(){syncClock(false)},60000);
+  keepAwake();
+}
+if(!tab)tab="start";
+try{
+  if(window.firebase&&FIREBASE_CONFIG&&FIREBASE_CONFIG.databaseURL){firebase.initializeApp(FIREBASE_CONFIG);fb=firebase}
+}catch(e){fb=null}
+var initial=(location.hash.slice(1)||"").toLowerCase();
+if(!/^[a-z0-9]{16,}$/.test(initial))initial=LS.get("event",null);
+if(fb&&initial)openEvent(initial,false);else showGate();
+window.addEventListener("online",flush);
+})();
+</script>
+</body>
+</html>
